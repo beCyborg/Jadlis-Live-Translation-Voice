@@ -1,0 +1,22 @@
+[
+ {"lang":"ru","text":"Добрый день! Подскажите, пожалуйста, где здесь ближайшая аптека?"},
+ {"lang":"pl","text":"Dzień dobry. Apteka jest za rogiem, obok piekarni."},
+ {"lang":"ru","text":"Спасибо. А она работает в воскресенье?"},
+ {"lang":"pl","text":"Tak."},
+ {"lang":"ru","text":"Отлично, тогда я пойду туда прямо сейчас."},
+ {"lang":"pl","text":"W niedzielę jest otwarta do osiemnastej, ale w poniedziałek od ósmej."},
+ {"lang":"ru","text":"Хорошо."},
+ {"lang":"es","text":"Hola, ¿qué desea tomar?"},
+ {"lang":"ru","text":"Мне, пожалуйста, кофе с молоком и стакан воды."},
+ {"lang":"es","text":"Sí."},
+ {"lang":"es","text":"¿Quiere el café grande o pequeño? El grande cuesta tres euros con cincuenta."},
+ {"lang":"ru","text":"Большой, пожалуйста. Можно оплатить картой?"},
+ {"lang":"es","text":"Claro que sí, sin problema."},
+ {"lang":"ru","text":"Меня зовут Сергей, я жду друга по имени Мигель."},
+ {"lang":"cs","text":"Dobrý den, máte rezervaci na jméno Novák?"},
+ {"lang":"ru","text":"Нет, у нас нет брони. Есть свободный столик на двоих?"},
+ {"lang":"cs","text":"Ano."},
+ {"lang":"cs","text":"Můžete si sednout k oknu, přinesu vám jídelní lístek."},
+ {"lang":"ru","text":"Да."},
+ {"lang":"cs","text":"Děkuji, hned jsem zpátky."}
+]

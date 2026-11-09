@@ -1,0 +1,5 @@
+node_modules
+dist
+spike/out
+spike/keys.sh
+.DS_Store
