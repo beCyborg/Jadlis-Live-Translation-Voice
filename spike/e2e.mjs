@@ -14,7 +14,7 @@ page.on('request', (r) => hosts.add(new URL(r.url()).host));
 page.on('websocket', (ws) => hosts.add('ws:' + new URL(ws.url()).host));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-await page.goto('http://localhost:4173/Jadlis-Live-Translation-Voice/');
+await page.goto(process.env.URL ?? 'http://localhost:4173/Jadlis-Live-Translation-Voice/');
 await page.screenshot({ path: 'spike/out/e2e-0-start.png' });
 const t0 = Date.now();
 await page.getByRole('button', { name: 'Начать разговор' }).click();
