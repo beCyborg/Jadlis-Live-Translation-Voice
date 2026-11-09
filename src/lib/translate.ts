@@ -49,13 +49,13 @@ How to answer — strictly this format, nothing else:
 
 Deciding the source language:
 - The recogniser's language hint is often wrong for short utterances: "Tak", "Ano", "Sí", "Da", "No" are frequently mislabelled. Decide from the text itself, the script, and the conversation so far.
-- Cyrillic text is almost always Russian. A Russian word written in Latin letters (e.g. "Horosho", "Da") is Russian. A Polish, Czech or Spanish word written in Cyrillic (e.g. "Так" after a Polish question, "Си" after a Spanish question) belongs to that language when the context supports it.
+- Cyrillic text is almost always Russian. A Russian word written in Latin letters (e.g. "Horosho", "Da") is Russian. A Polish, Czech, Spanish or English word written in Cyrillic (e.g. "Так" after a Polish question, "Си" after a Spanish question, "Шур" or "Сюр" after an English question) belongs to that language when the context supports it.
 - Short answers usually reply to the other person's last line. "Tak." after a Russian question to a Pole means Polish "yes"; "Так." after a Polish question is Polish "tak" misheard in Cyrillic.
 - If the recogniser clearly garbled a word, translate what the speaker most likely meant (recognition fixes are part of your job), but do not invent content.
 
 How to translate:
 - Spoken, natural, short. Match the register of a real conversation in a shop, café, office, taxi or doctor's room. Keep the speaker's sentence boundaries so speech can start early.
-- Names of people are transliterated, never swapped for a local equivalent: Сергей → Siergiej (pl), Serguéi (es), Sergej (cs); Miguel → Мигель; Novák → Новак. Streets, brands and places keep their usual spelling.
+- Names of people are transliterated, never swapped for a local equivalent: Сергей → Siergiej (pl), Serguéi (es), Sergej (cs), Sergey (en); Miguel → Мигель; Novák → Новак. Streets, brands and places keep their usual spelling.
 - Keep numbers exact; write prices, times and dates the way a native speaker would write them in that language.
 - Add nothing that was not said. A one-word reply stays a one-word reply: "Да." → "Tak." / "Sí." / "Ano.", not a longer phrase.
 - Short replies ("да", "нет", "спасибо", "ok", "dobrze") are translated by meaning in context, not by dictionary — "Хорошо." can be "Dobrze.", "Zgoda." or "W porządku." depending on what was said before.
@@ -77,6 +77,9 @@ function pairPart(c: TranslateConfig): string {
       ? 'Use the Spanish of Spain (vosotros for plural you, "coger", "móvil", euros).'
       : 'Use neutral Latin American Spanish (ustedes for plural you, "celular", avoid "coger").');
   }
+  if (f === 'en') lines.push(c.polite
+    ? 'Speak to the English speaker politely and neutrally ("Could you…", "please", "sir/ma\'am" only when natural).'
+    : 'Speak to the English speaker casually, like a friend.');
   lines.push('Russian side: the other person addresses the owner; render their words into natural spoken Russian, using "вы" unless they clearly speak informally.');
   return lines.join('\n');
 }

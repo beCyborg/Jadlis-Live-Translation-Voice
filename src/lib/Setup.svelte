@@ -47,7 +47,7 @@
   <p class="group-title">Язык собеседника</p>
   <div class="group">
     <div class="row">
-      <div class="segmented" style="flex:1">
+      <div class="segmented langs" style="flex:1">
         {#each PRESETS as f}
           <button class:active={settings.foreign === f} onclick={() => (settings.foreign = f)}>{LANGS[f].flag} {LANGS[f].name}</button>
         {/each}
