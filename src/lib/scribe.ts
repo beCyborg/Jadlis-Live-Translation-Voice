@@ -24,7 +24,12 @@ export interface ScribeHandlers {
 export interface ScribeOptions {
   vadSilence: number;
   keyterms: string[];
+  /** Push-to-talk: audio flows only between begin() and finish(); the phrase ends on finish(). */
+  manual: boolean;
 }
+
+const MANUAL_SOFT_COMMIT_FRAMES = 400; // 20 s of audio: commit at the next quiet frame, keep the buffer small
+const MANUAL_FINISH_TIMEOUT_MS = 6000;
 
 class Session {
   ws: WebSocket;
@@ -34,6 +39,9 @@ class Session {
   started = false; // audio flows only after a speech onset
   startedAt = 0;
   heardText = false;
+  sentFrames = 0;
+  commitsSent = 0;
+  commitsReceived = 0;
   pending: Int16Array[] = [];
   onCommitted: ((text: string, lang: string | null) => void) | null = null;
   onPartial: ((text: string) => void) | null = null;
@@ -56,6 +64,7 @@ class Session {
         }
         // committed_transcript arrives first, without the language; count only the second event.
         if (type === 'committed_transcript_with_timestamps') {
+          this.commitsReceived++;
           this.onCommitted?.(((d.text as string) ?? '').trim(), (d.language_code as string) ?? null);
           return;
         }
@@ -80,6 +89,13 @@ class Session {
   send(frame: Int16Array) {
     if (this.closed || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: b64(frame), commit: false, sample_rate: 16000 }));
+    this.sentFrames++;
+  }
+
+  commit() {
+    if (this.closed || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: '', commit: true, sample_rate: 16000 }));
+    this.commitsSent++;
   }
 
   close() {
@@ -87,6 +103,8 @@ class Session {
     try { this.ws.close(1000); } catch { /* already closed */ }
   }
 }
+
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function b64(frame: Int16Array): string {
   const bytes = new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength);
@@ -104,6 +122,12 @@ export class ScribeRotator {
   private failures = 0;
   private floor = 300; // noise floor, RMS of int16
   private voicedRun = 0;
+  // Push-to-talk state.
+  private manual = false;
+  private recording = false;
+  private pieces: { text: string; lang: string | null }[] = [];
+  private livePartial = '';
+  private piecesWaiter: (() => void) | null = null;
 
   constructor(
     private apiKey: () => string,
@@ -114,6 +138,9 @@ export class ScribeRotator {
   async start() {
     this.running = true;
     this.failures = 0;
+    this.manual = this.options().manual;
+    this.recording = false;
+    this.pieces = [];
     this.fillTokens();
     this.active = await this.open();
     this.standby = await this.open().catch(() => null);
@@ -126,6 +153,55 @@ export class ScribeRotator {
     this.active = this.standby = null;
     this.tokens = [];
     this.ring = [];
+    this.recording = false;
+    this.pieces = [];
+    this.piecesWaiter?.();
+  }
+
+  /** Push-to-talk: start a phrase. Only speech after the press goes to the recogniser. */
+  begin() {
+    if (!this.manual) return;
+    this.ring = [];
+    this.voicedRun = 0;
+    this.pieces = [];
+    this.livePartial = '';
+    this.recording = true;
+  }
+
+  /** Push-to-talk: end the phrase and return everything recognised since begin(). */
+  async finish(): Promise<{ text: string; lang: string | null }> {
+    if (!this.manual || !this.recording) return { text: '', lang: null };
+    this.recording = false;
+    const s = this.active;
+    if (s && s.started) {
+      const ok = await Promise.race([s.ready.then(() => true, () => false), wait(MANUAL_FINISH_TIMEOUT_MS).then(() => false)]);
+      if (ok && s === this.active) {
+        for (const p of s.pending) s.send(p);
+        s.pending = [];
+        s.commit();
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            this.piecesWaiter = () => { if (s.commitsReceived >= s.commitsSent || s.closed || !this.running) { this.piecesWaiter = null; resolve(); } };
+            this.piecesWaiter();
+          }),
+          wait(MANUAL_FINISH_TIMEOUT_MS),
+        ]);
+        this.piecesWaiter = null;
+      }
+    }
+    const pieces = this.pieces;
+    this.pieces = [];
+    const text = pieces.map((p) => p.text).filter(Boolean).join(' ').trim();
+    if (!text && this.livePartial) {
+      // The final commit never came back: keep what the user saw on screen.
+      const fallback = this.livePartial;
+      this.livePartial = '';
+      if (this.running) this.rotate();
+      return { text: fallback, lang: null };
+    }
+    this.livePartial = '';
+    if (this.running && s?.started) this.rotate();
+    return { text, lang: pieces.findLast((p) => p.lang)?.lang ?? null };
   }
 
   /** Feed one 50 ms frame. `silent` replaces it with zeros (while our own voice plays). */
@@ -135,6 +211,7 @@ export class ScribeRotator {
     this.ring.push(f);
     if (this.ring.length > RING_FRAMES) this.ring.shift();
     const voiced = this.detect(f);
+    if (this.manual && !this.recording) return;
     const s = this.active;
     if (!s) return;
     if (!s.started) {
@@ -150,6 +227,11 @@ export class ScribeRotator {
       s.pending = [];
     } else if (s.pending.length > 200) {
       s.pending.splice(0, s.pending.length - 200); // 10 s cap while connecting
+    }
+    if (this.manual) {
+      // A long monologue: commit at a pause so the server buffer stays small; pieces are joined on finish().
+      if (s.isReady && this.voicedRun === 0 && s.sentFrames - s.commitsSent * MANUAL_SOFT_COMMIT_FRAMES >= MANUAL_SOFT_COMMIT_FRAMES) s.commit();
+      return;
     }
     if (!s.heardText && performance.now() - s.startedAt > NO_TEXT_RESET_MS) this.rotate();
   }
@@ -192,10 +274,10 @@ export class ScribeRotator {
       model_id: 'scribe_v2_realtime',
       token,
       audio_format: 'pcm_16000',
-      commit_strategy: 'vad',
-      vad_silence_threshold_secs: String(Math.min(3, Math.max(0.3, o.vadSilence))),
+      commit_strategy: o.manual ? 'manual' : 'vad',
       include_language_detection: 'true',
     });
+    if (!o.manual) q.set('vad_silence_threshold_secs', String(Math.min(3, Math.max(0.3, o.vadSilence))));
     for (const k of o.keyterms) q.append('keyterms', k);
     return `${WS}?${q}`;
   }
@@ -209,7 +291,12 @@ export class ScribeRotator {
       throw e;
     }
     const s = new Session(this.url(token));
-    s.onPartial = (text) => { if (s === this.active) this.h.partial(text); };
+    s.onPartial = (text) => {
+      if (s !== this.active) return;
+      if (!this.manual) { this.h.partial(text); return; }
+      this.livePartial = [...this.pieces.map((p) => p.text), text].filter(Boolean).join(' ');
+      this.h.partial(this.livePartial);
+    };
     s.onCommitted = (text, lang) => { if (s === this.active) this.onCommit(text, lang); };
     s.onFail = (msg, fatal) => { this.h.error(msg, fatal); if (fatal) this.stop(); };
     s.onUnexpectedClose = () => this.onLost(s);
@@ -227,6 +314,12 @@ export class ScribeRotator {
   }
 
   private onCommit(text: string, lang: string | null) {
+    if (this.manual) {
+      if (text) this.pieces.push({ text, lang });
+      this.livePartial = this.pieces.map((p) => p.text).join(' ');
+      this.piecesWaiter?.();
+      return;
+    }
     const at = performance.now();
     if (!text) return; // VAD fired on silence; keep the session
     this.h.committed(text, lang, at);

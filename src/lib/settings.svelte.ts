@@ -2,6 +2,10 @@ import { RU_VOICE, VOICE_PRESETS, type Foreign, type Gender, type Lang, type Voi
 
 export type Model = 'claude-haiku-5-5' | 'claude-sonnet-5-5';
 export type AudioSessionMode = 'auto' | 'play-and-record' | 'playback';
+/** both = RU ⇄ foreign; from-ru = only Russian speech is translated; to-ru = only the other person's speech. */
+export type Direction = 'both' | 'from-ru' | 'to-ru';
+/** auto = the phone hears the pause and translates; manual = one button: tap to listen, tap again to translate. */
+export type TalkMode = 'auto' | 'manual';
 
 export interface Settings {
   anthropicKey: string;
@@ -23,6 +27,8 @@ export interface Settings {
   audioSession: AudioSessionMode;
   debug: boolean;
   muteWhileSpeaking: boolean;
+  direction: Direction;
+  talkMode: TalkMode;
 }
 
 export const NIKOLAY = RU_VOICE.id;
@@ -46,6 +52,8 @@ const DEFAULTS: Settings = {
   audioSession: 'auto',
   debug: false,
   muteWhileSpeaking: false,
+  direction: 'both',
+  talkMode: 'auto',
 };
 
 const KEY = 'jt.settings.v1';
@@ -90,6 +98,10 @@ export function presetVoice(lang: Lang, gender: Gender = settings.voiceGender): 
 }
 
 export const voiceFor = (lang: Lang) => settings.voiceCustom[lang] || presetVoice(lang).id;
+
+/** The only source language that gets translated, or null when both directions are on. */
+export const oneWaySource = (): Lang | null =>
+  settings.direction === 'from-ru' ? 'ru' : settings.direction === 'to-ru' ? settings.foreign : null;
 
 export const keyterms = () =>
   settings.keyterms.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 100);

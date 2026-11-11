@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settings, keys, presetVoice, type Model } from './settings.svelte';
+  import { settings, keys, presetVoice, type Model, type Direction } from './settings.svelte';
   import { conversation } from './conversation.svelte';
   import { LANGS, PRESETS, type Lang } from './langs';
   import Icon from './Icon.svelte';
@@ -42,6 +42,20 @@
     { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
   ];
 
+  const F = $derived(settings.foreign.toUpperCase());
+  const directions = $derived<{ id: Direction; label: string }[]>([
+    { id: 'both', label: `RU ⇄ ${F}` },
+    { id: 'from-ru', label: `RU → ${F}` },
+    { id: 'to-ru', label: `${F} → RU` },
+  ]);
+  const directionFoot = $derived(
+    settings.direction === 'from-ru'
+      ? `Переводится только русская речь. Ответы на ${LANGS[settings.foreign].name.toLowerCase().replace(/ий$/, 'ом')} не переводятся.`
+      : settings.direction === 'to-ru'
+        ? 'Переводится только речь собеседника. Русская речь не переводится.'
+        : 'Переводятся оба человека.',
+  );
+
   function clearHistory() {
     if (confirm('Удалить всю историю разговоров с этого телефона?')) conversation.clearHistory();
   }
@@ -55,6 +69,31 @@
       <button class="icon-btn" onclick={() => (open = false)} aria-label="Закрыть"><Icon name="close" /></button>
     </header>
     <div class="scroll">
+      <p class="group-title">Режим</p>
+      <div class="group">
+        <div class="row">
+          <span class="label">Перевод</span>
+          <div class="segmented">
+            {#each directions as d}
+              <button class:active={settings.direction === d.id} onclick={() => (settings.direction = d.id)}>{d.label}</button>
+            {/each}
+          </div>
+        </div>
+        <div class="row">
+          <span class="label">Слушать</span>
+          <div class="segmented">
+            <button class:active={settings.talkMode === 'auto'} onclick={() => conversation.setTalkMode('auto')}>Сам</button>
+            <button class:active={settings.talkMode === 'manual'} onclick={() => conversation.setTalkMode('manual')}>По кнопке</button>
+          </div>
+        </div>
+      </div>
+      <p class="group-foot">
+        {directionFoot}
+        {settings.talkMode === 'manual'
+          ? 'По кнопке: первое нажатие — слушаю, второе — перевожу всё, что сказано между нажатиями.'
+          : 'Сам: телефон слушает всё время и переводит после паузы.'}
+      </p>
+
       <p class="group-title">Язык собеседника</p>
       <div class="group">
         <div class="row">

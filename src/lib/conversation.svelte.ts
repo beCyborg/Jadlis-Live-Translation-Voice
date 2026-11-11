@@ -2,7 +2,7 @@ import { Mic } from './mic';
 import { ScribeRotator } from './scribe';
 import { Speaker } from './tts';
 import { Translator, explainError, type HistoryLine } from './translate';
-import { settings, keyterms, keys, voiceFor } from './settings.svelte';
+import { settings, keyterms, keys, voiceFor, oneWaySource, type TalkMode } from './settings.svelte';
 import { CYRILLIC, wordCount, type Lang } from './langs';
 
 /** Who spoke: `me` = the Russian-speaking owner, `them` = the other person. */
@@ -47,11 +47,14 @@ export class Conversation {
   online = $state(typeof navigator === 'undefined' ? true : navigator.onLine);
   timings: Timing[] = $state([]);
   speakingTurn: number | null = $state(null);
+  /** Push-to-talk: the button is down (listening) / the phrase is being closed. */
+  talking = $state(false);
+  finishing = $state(false);
 
   private mic = new Mic((f) => this.onFrame(f));
   private scribe = new ScribeRotator(
     () => keys.eleven,
-    () => ({ vadSilence: settings.vadSilence, keyterms: keyterms() }),
+    () => ({ vadSilence: settings.vadSilence, keyterms: keyterms(), manual: settings.talkMode === 'manual' }),
     {
       partial: (text) => { this.partial = { text, side: CYRILLIC.test(text) ? 'me' : 'them' }; },
       committed: (text, lang, at) => this.onCommitted(text, lang, at),
@@ -94,6 +97,55 @@ export class Conversation {
 
   get foreign() { return settings.foreign; }
 
+  get manual() { return settings.talkMode === 'manual'; }
+
+  /** Status for the indicator dot: in push-to-talk mode the phone listens only while the button is on. */
+  get indicator(): Status | 'ready' {
+    if (this.manual && this.status === 'listening' && !this.talking) return 'ready';
+    return this.status;
+  }
+
+  /** Switch auto ⇄ push-to-talk; a running conversation reopens recognition in the new mode. */
+  async setTalkMode(mode: TalkMode) {
+    if (settings.talkMode === mode) return;
+    settings.talkMode = mode;
+    this.talking = false;
+    if (this.status === 'off') return;
+    this.scribe.stop();
+    this.partial = { text: '', side: 'me' };
+    if (this.status === 'paused') return;
+    try {
+      await this.scribe.start();
+    } catch (e) {
+      this.error = (e as Error).message;
+    }
+  }
+
+  /** Push-to-talk button: first tap listens, second tap translates everything said in between. */
+  async toggleTalk() {
+    if (!this.manual || this.finishing) return;
+    if (this.status === 'off' || this.status === 'paused') {
+      await this.start();
+      if (this.status === 'off') return;
+    }
+    if (!this.talking) {
+      this.speaker.stop(); // the owner talks over a translation: cut it, or the mic hears it
+      this.scribe.begin();
+      this.talking = true;
+      return;
+    }
+    this.talking = false;
+    this.finishing = true;
+    try {
+      const { text, lang } = await this.scribe.finish();
+      this.partial = { text: '', side: 'me' };
+      if (text) this.onCommitted(text, lang, performance.now());
+      else this.notice = 'Ничего не расслышал. Нажмите кнопку и скажите ещё раз.';
+    } finally {
+      this.finishing = false;
+    }
+  }
+
   lastTurnBy(side: Side): Turn | undefined {
     for (let i = this.turns.length - 1; i >= 0; i--) if (this.turns[i].side === side) return this.turns[i];
     return undefined;
@@ -129,6 +181,7 @@ export class Conversation {
     this.mic.stop();
     this.speaker.stop();
     this.partial = { text: '', side: 'me' };
+    this.talking = false;
     this.status = 'off';
     await this.wakeLock?.release().catch(() => {});
     this.wakeLock = null;
@@ -150,6 +203,7 @@ export class Conversation {
       this.scribe.stop();
       this.speaker.stop();
       this.partial = { text: '', side: 'me' };
+      this.talking = false;
       this.status = 'paused';
     }
   }
@@ -168,6 +222,8 @@ export class Conversation {
     if (!turn) return;
     const src: Lang = side === 'me' ? 'ru' : settings.foreign;
     if (turn.src === src) return;
+    const only = oneWaySource();
+    if (only && src !== only) return;
     this.speaker.stop();
     this.translateTurn(turn, null, performance.now(), src);
   }
@@ -258,6 +314,7 @@ export class Conversation {
             esVariant: settings.esVariant,
             glossary: keyterms(),
             customPrompt: settings.customPrompt,
+            oneWay: oneWaySource(),
           },
           { asrText: turn.srcText, asrLang, history, forcedSource },
           {

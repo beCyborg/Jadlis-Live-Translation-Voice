@@ -14,6 +14,8 @@ export interface TranslateConfig {
   esVariant: 'spain' | 'latam';
   glossary: string[];
   customPrompt: string;
+  /** One-way mode: only utterances in this language are translated; the rest are skipped. */
+  oneWay?: Lang | null;
   /** Bench only: let Haiku think (adaptive) instead of disabling thinking. */
   haikuThinks?: boolean;
 }
@@ -81,6 +83,11 @@ function pairPart(c: TranslateConfig): string {
     ? 'Speak to the English speaker politely and neutrally ("Could you…", "please", "sir/ma\'am" only when natural).'
     : 'Speak to the English speaker casually, like a friend.');
   lines.push('Russian side: the other person addresses the owner; render their words into natural spoken Russian, using "вы" unless they clearly speak informally.');
+  if (c.oneWay) {
+    const from = c.oneWay;
+    const to: Lang = from === 'ru' ? f : 'ru';
+    lines.push(`One-way mode is on: translate only utterances spoken in ${LANGS[from].native} (${from}→${to}). If the utterance is in ${LANGS[to].native}, answer with the single character ∅ — that side is not translated.`);
+  }
   return lines.join('\n');
 }
 
@@ -162,6 +169,9 @@ export class Translator {
       }
     };
 
+    // One-way mode: an utterance in the other language is skipped like noise.
+    const allowed = (src: Lang) => !c.oneWay || src === c.oneWay;
+
     for await (const ev of stream) {
       if (ev.type !== 'content_block_delta' || ev.delta.type !== 'text_delta') continue;
       raw += ev.delta.text;
@@ -172,11 +182,13 @@ export class Translator {
         if (m) {
           const code = m[1] as Lang;
           label = valid.includes(code) ? code : valid.includes(m[2] as Lang) ? (m[2] === 'ru' ? c.foreign : 'ru') : r.forcedSource ?? 'ru';
+          if (!allowed(label)) { label = null; cb.direction(null); stream.abort(); break; }
           cb.direction(label);
           body = t.slice(m[0].length);
         } else if (t.length > 8) {
           // Model ignored the format: treat everything as the translation, guess the source by script.
           label = r.forcedSource ?? (/[Ѐ-ӿ]/.test(r.asrText) ? 'ru' : c.foreign);
+          if (!allowed(label)) { label = null; cb.direction(null); stream.abort(); break; }
           cb.direction(label);
           body = t;
         } else continue;

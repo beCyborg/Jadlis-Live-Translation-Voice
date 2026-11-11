@@ -2,6 +2,7 @@
   import { conversation, type Side } from './conversation.svelte';
   import { settings } from './settings.svelte';
   import { UI_FOREIGN, wordCount } from './langs';
+  import { oneWaySource } from './settings.svelte';
   import Icon from './Icon.svelte';
 
   let { side, flipped = false }: { side: Side; flipped?: boolean } = $props();
@@ -33,19 +34,24 @@
         },
   );
   const status = $derived(conversation.status);
+  const indicator = $derived(conversation.indicator);
+  // One-way mode: this person's speech is not translated, so do not invite them to speak.
+  const translated = $derived(!oneWaySource() || oneWaySource() === (side === 'me' ? 'ru' : settings.foreign));
 </script>
 
 <section class="half" class:flipped aria-label={side === 'me' ? 'Моя половина' : 'Половина собеседника'}>
   <div class="corner">
-    <span class="dot {status}" class:speaking></span>
+    <span class="dot {indicator}" class:speaking></span>
     <span class="spacer"></span>
+    {#if !conversation.manual}
     <button class="icon-btn" class:on={status === 'paused'} onclick={() => conversation.togglePause()} aria-label={status === 'paused' ? t.resume : t.pause} title={status === 'paused' ? t.resume : t.pause}>
       <Icon name={status === 'paused' ? 'micOff' : 'mic'} />
     </button>
+    {/if}
     <button class="icon-btn" class:on={speaking} onclick={() => conversation.replay(side)} disabled={!big?.text} aria-label={t.replay} title={t.replay}>
       <Icon name="speaker" />
     </button>
-    <button class="icon-btn" onclick={() => conversation.claim(side)} disabled={!conversation.turns.length} aria-label={t.mine} title={t.mine}>
+    <button class="icon-btn" onclick={() => conversation.claim(side)} disabled={!conversation.turns.length || !translated} aria-label={t.mine} title={t.mine}>
       <Icon name="me" />
     </button>
   </div>
@@ -55,7 +61,7 @@
       {#key big.id}
         <p class="appear">{big.text}</p>
       {/key}
-    {:else if !small}
+    {:else if !small && translated}
       <p class="hint">{t.hint}</p>
     {/if}
   </div>

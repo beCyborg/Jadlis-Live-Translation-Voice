@@ -7,10 +7,18 @@
   import SettingsSheet from './lib/SettingsSheet.svelte';
   import Setup from './lib/Setup.svelte';
   import Icon from './lib/Icon.svelte';
+  import TalkButton from './lib/TalkButton.svelte';
 
   let ready = $state(!!keys.anthropic && !!keys.eleven);
   let sheet = $state(false);
   const on = $derived(conversation.status !== 'off');
+  const manual = $derived(settings.talkMode === 'manual');
+  // Left → right reads as the direction of translation.
+  const pair = $derived(
+    settings.direction === 'to-ru'
+      ? { left: settings.foreign, right: 'ru' as const, arrow: '→' }
+      : { left: 'ru' as const, right: settings.foreign, arrow: settings.direction === 'from-ru' ? '→' : '⇄' },
+  );
 </script>
 
 {#if !ready}
@@ -24,7 +32,7 @@
     <div class="bar">
       <button class="icon-btn" onclick={() => (sheet = true)} aria-label="Настройки"><Icon name="gear" /></button>
       <button class="pair" onclick={() => (sheet = true)}>
-        {LANGS.ru.flag} RU <span class="arrows">⇄</span> {settings.foreign.toUpperCase()} {LANGS[settings.foreign].flag}
+        {LANGS[pair.left].flag} {pair.left.toUpperCase()} <span class="arrows">{pair.arrow}</span> {pair.right.toUpperCase()} {LANGS[pair.right].flag}
       </button>
       {#if on}
         <button class="icon-btn" onclick={() => conversation.stop()} aria-label="Закончить разговор"><Icon name="stop" /></button>
@@ -39,7 +47,9 @@
       <Single />
     {/if}
 
-    {#if !on}
+    {#if manual}
+      <TalkButton />
+    {:else if !on}
       <div class="start">
         <button class="primary" onclick={() => conversation.start()}>Начать разговор</button>
         <p>Телефон попросит доступ к микрофону. Экран не погаснет, пока идёт разговор.</p>
